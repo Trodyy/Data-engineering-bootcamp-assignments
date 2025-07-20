@@ -21,6 +21,15 @@ CREATE TABLE actors (
 
 
 
+
+
+
+
+
+--###PART 2###--
+
+
+
 WITH yesterday AS (
     SELECT * FROM actors 
     WHERE current_year = 1978

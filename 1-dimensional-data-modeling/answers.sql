@@ -69,7 +69,8 @@ combined AS (
         ON t.actorid = y.actorid
 )
 
--- Upsert operation
+
+
 INSERT INTO actors
 SELECT * FROM combined
 ON CONFLICT (actorid, actor) DO UPDATE
@@ -78,6 +79,135 @@ SET
     quality_class = EXCLUDED.quality_class,
     is_active = EXCLUDED.is_active,
     current_year = EXCLUDED.current_year;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+--###PART 3###--
+CREATE TABLE actors_scd_type (
+	actor TEXT ,
+	quality_class quality_class ,
+	is_active BOOLEAN ,
+	start_season INTEGER , 
+	end_season INTEGER ,
+	current_season INTEGER
+)
+
+
+
+
+
+
+
+
+--###PART 4###--
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+--###PART 5###--
+WITH last_year_scd AS (
+	SELECT actor , quality_class , is_active , start_year , end_year FROM actors_history_scd
+	WHERE end_year = 1978 AND current_year = 1978
+) ,
+	historical_scd AS (
+		SELECT actor , quality_class , is_active , start_year , end_year FROM actors_history_scd
+	WHERE end_year < 1978 AND current_year= 1978
+) ,
+	this_year_data AS (
+		SELECT * FROM actors
+		WHERE current_year = 1979
+	) ,
+	unchanged_records AS (
+		SELECT
+			ly.actor ,
+			ly.quality_class ,
+			ly.is_active ,
+			ly.start_year ,
+			ty.current_year AS end_year
+		FROM this_year_data ty
+		JOIN last_year_scd ly
+		ON ty.actor = ly.actor
+		WHERE ty.quality_class = ly.quality_class
+		AND ty.is_active = ly.is_active
+	) ,
+	changed_records AS (
+		SELECT 
+			ty.actor ,
+			UNNEST(
+				ARRAY[ROW(
+						ly.quality_class ,
+						ly.is_active ,
+						ly.start_year ,
+						ly.end_year
+					)::actors_scd ,
+					  ROW(
+					  	ty.quality_class ,
+						ty.is_active ,
+						ty.current_year ,
+						ty.current_year
+				)::actors_scd]
+			) AS records
+		FROM this_year_data ty
+		LEFT JOIN last_year_scd ly
+		ON ty.actor = ly.actor
+		WHERE ty.quality_class <> ly.quality_class
+		OR ty.is_active <> ly.is_active
+	) ,
+	unnested_changed_records AS (
+		SELECT
+			actor ,
+			(records::actors_scd).quality_class ,
+            (records::actors_scd).is_active,
+            (records::actors_scd).start_year,
+            (records::actors_scd).end_year
+		FROM changed_records
+	) ,
+	new_records AS (
+		SELECT
+			ty.actor ,
+			ty.quality_class ,
+			ty.is_active ,
+			ty.current_year AS start_year ,
+			ty.current_year AS end_year
+		FROM this_year_data ty
+		LEFT JOIN last_year_scd ly
+		ON ty.actor = ly.actor
+		WHERE ly.actor IS NULL
+	)
+
+SELECT *, 1979 AS current_year FROM (
+    SELECT actor, quality_class, is_active, start_year, end_year FROM historical_scd
+UNION ALL
+SELECT actor, quality_class, is_active, start_year, end_year FROM unchanged_records
+UNION ALL
+SELECT actor, quality_class, is_active, start_year, end_year FROM unnested_changed_records
+UNION ALL
+SELECT actor, quality_class, is_active, start_year, end_year FROM new_records
+) total
+
 
 
 

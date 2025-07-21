@@ -1,5 +1,5 @@
 --###PART 1###--
-
+---DDL for actors table : Create a DDL for an actors table with the following fields 
 CREATE TYPE films AS (
 	film TEXT , 
 	votes INTEGER , 
@@ -27,7 +27,7 @@ CREATE TABLE actors (
 
 
 --###PART 2###--
-
+--Cumulative table generation query: Write a query that populates the actors table one year at a time.
 
 
 WITH yesterday AS (
@@ -81,7 +81,7 @@ SET
     current_year = EXCLUDED.current_year;
 
 
-
+--I inerto into year = 1979(I mean assume this year is 1979)
 
 
 
@@ -94,6 +94,8 @@ SET
 
 
 --###PART 3###--
+--DDL for actors_history_scd table: Create a DDL for an actors_history_scd table.
+
 CREATE TABLE actors_scd_type (
 	actor TEXT ,
 	quality_class quality_class ,
@@ -111,10 +113,44 @@ CREATE TABLE actors_scd_type (
 
 
 --###PART 4###--
+--Backfill query for actors_history_scd: Write a "backfill" query that can populate the entire actors_history_scd table in a single query.
 
 
 
 
+WITH streak_started AS (
+    SELECT actor,
+           current_year,
+           quality_class,
+           LAG(quality_class, 1) OVER
+               (PARTITION BY actor ORDER BY current_year) <> quality_class
+               OR LAG(quality_class, 1) OVER
+               (PARTITION BY actor ORDER BY current_year) IS NULL
+               AS did_change
+    FROM actors
+),
+     streak_identified AS (
+         SELECT
+           actor,
+                quality_class,
+                current_year,
+            SUM(CASE WHEN did_change THEN 1 ELSE 0 END)
+                OVER (PARTITION BY actor ORDER BY current_year) as streak_identifier
+         FROM streak_started
+     ),
+     aggregated AS (
+         SELECT
+            actor,
+            quality_class,
+            streak_identifier,
+            MIN(current_year) AS start_date,
+            MAX(current_year) AS end_date
+         FROM streak_identified
+         GROUP BY 1,2,3
+     )
+
+     SELECT actor, quality_class, start_date, end_date
+     FROM aggregated
 
 
 
@@ -128,6 +164,13 @@ CREATE TABLE actors_scd_type (
 
 
 --###PART 5###--
+--Incremental query for actors_history_scd: Write an "incremental" query that combines the previous year's SCD data with new incoming data from the actors table.
+CREATE TYPE actors_scd AS (
+	quality_class quality_class ,
+	is_active BOOLEAN ,
+	start_year INTEGER ,
+	end_year INTEGER
+)
 WITH last_year_scd AS (
 	SELECT actor , quality_class , is_active , start_year , end_year FROM actors_history_scd
 	WHERE end_year = 1978 AND current_year = 1978
@@ -142,7 +185,7 @@ WITH last_year_scd AS (
 	) ,
 	unchanged_records AS (
 		SELECT
-			ly.actor ,
+			ly.actor AS actor ,
 			ly.quality_class ,
 			ly.is_active ,
 			ly.start_year ,
@@ -155,7 +198,7 @@ WITH last_year_scd AS (
 	) ,
 	changed_records AS (
 		SELECT 
-			ty.actor ,
+			ty.actor as actor ,
 			UNNEST(
 				ARRAY[ROW(
 						ly.quality_class ,
@@ -178,7 +221,7 @@ WITH last_year_scd AS (
 	) ,
 	unnested_changed_records AS (
 		SELECT
-			actor ,
+			actor as actor ,
 			(records::actors_scd).quality_class ,
             (records::actors_scd).is_active,
             (records::actors_scd).start_year,
@@ -207,6 +250,14 @@ SELECT actor, quality_class, is_active, start_year, end_year FROM unnested_chang
 UNION ALL
 SELECT actor, quality_class, is_active, start_year, end_year FROM new_records
 ) total
+
+
+
+
+
+	
+
+
 
 
 

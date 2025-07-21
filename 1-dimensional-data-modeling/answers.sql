@@ -1,23 +1,28 @@
 --###PART 1###--
 ---DDL for actors table : Create a DDL for an actors table with the following fields 
+
+-- Create custom types first
 CREATE TYPE films AS (
-	film TEXT , 
-	votes INTEGER , 
-	rating REAL ,
-	filmid TEXT
-)
+    film TEXT , 
+    votes INTEGER , 
+    rating REAL ,
+    filmid TEXT
+);
 
-CREATE TYPE quality_class AS ENUM ('star' , 'good' , 'average' , 'bad')
+CREATE TYPE quality_class AS ENUM ('star', 'good', 'average', 'bad');
 
+-- Create actors table with proper primary key
 CREATE TABLE actors (
-	actorid TEXT , 
-	actor TEXT ,
-	current_year INTEGER ,
-	films films[] ,
-	quality_class quality_class ,
-	is_active BOOLEAN ,
-	PRIMARY KEY(actorid , actor)
-	);
+    actorid TEXT PRIMARY KEY , 
+    actor TEXT NOT NULL,
+    current_year INTEGER NOT NULL ,
+    films films[] ,
+    quality_class quality_class ,
+    is_active BOOLEAN ,
+);
+
+COMMENT ON TABLE actors IS 'Master table of actors with their current state';
+COMMENT ON COLUMN actors.quality_class IS 'Performance quality based on most recent year''s average rating';
 
 
 
@@ -30,58 +35,66 @@ CREATE TABLE actors (
 --Cumulative table generation query: Write a query that populates the actors table one year at a time.
 
 
-WITH yesterday AS (
+W-- Cumulative load for year 1979 with better documentation
+WITH 
+-- Get previous state (1978 data)
+previous_year AS (
     SELECT * FROM actors 
     WHERE current_year = 1978
 ),
 
-today_aggregated AS (
+-- Aggregate current year films by actor
+current_year_films AS (
     SELECT
+        actorid ,
         actor ,
-		actorid ,
-        year,
-        ARRAY_AGG(ROW(film, votes, rating, filmid)::films) AS films,
+        year ,
+        ARRAY_AGG(ROW(film , votes , rating , filmid)::films) AS films ,
         AVG(rating) AS avg_rating
     FROM actor_films
     WHERE year = 1979
-    GROUP BY actorid, actor, year
+    GROUP BY actorid , actor , year
 ),
-combined AS (
+
+-- Combine previous and current data
+combined_data AS (
     SELECT 
-        COALESCE(y.actor, t.actor) AS actor,
-		COALESCE(y.actorid, t.actorid) AS actorid,
-        COALESCE(t.year, y.current_year + 1) AS current_year,
-        COALESCE(y.films, ARRAY[]::films[]) || 
-        COALESCE(t.films, ARRAY[]::films[]) AS films,
+        COALESCE(p.actorid, c.actorid) AS actorid ,
+        COALESCE(p.actor, c.actor) AS actor ,
+        1979 AS current_year ,
+        CASE 
+            WHEN c.actorid IS NOT NULL THEN 
+                COALESCE(p.films , ARRAY[]::films[]) || c.films
+            ELSE p.films
+        END AS films,
+        
         CASE
-            WHEN t.actorid IS NOT NULL THEN
+            WHEN c.actorid IS NOT NULL THEN
                 CASE 
-                    WHEN t.avg_rating > 8 THEN 'star'::quality_class
-                    WHEN t.avg_rating > 7 THEN 'good'::quality_class
-                    WHEN t.avg_rating > 6 THEN 'average'::quality_class
+                    WHEN c.avg_rating > 8 THEN 'star'::quality_class
+                    WHEN c.avg_rating > 7 THEN 'good'::quality_class
+                    WHEN c.avg_rating > 6 THEN 'average'::quality_class
                     ELSE 'bad'::quality_class
                 END
-            ELSE y.quality_class
+            ELSE p.quality_class
         END AS quality_class,
-        t.actorid IS NOT NULL AS is_active
-    FROM yesterday y
-    FULL OUTER JOIN today_aggregated t
-        ON t.actorid = y.actorid
+        
+        c.actorid IS NOT NULL AS is_active
+    FROM previous_year p
+    FULL OUTER JOIN current_year_films c
+        ON p.actorid = c.actorid
 )
 
-
-
+-- Upsert operation with conflict handling
 INSERT INTO actors
-SELECT * FROM combined
-ON CONFLICT (actorid, actor) DO UPDATE
+SELECT * FROM combined_data
+ON CONFLICT (actorid) DO UPDATE
 SET
-    films = EXCLUDED.films,
-    quality_class = EXCLUDED.quality_class,
-    is_active = EXCLUDED.is_active,
-    current_year = EXCLUDED.current_year;
-
-
---I inerto into year = 1979(I mean assume this year is 1979)
+    actor = EXCLUDED.actor ,
+    current_year = EXCLUDED.current_year ,
+    films = EXCLUDED.films ,
+    quality_class = EXCLUDED.quality_class ,
+    is_active = EXCLUDED.is_active ;
 
 
 
@@ -95,16 +108,19 @@ SET
 
 --###PART 3###--
 --DDL for actors_history_scd table: Create a DDL for an actors_history_scd table.
+CREATE TABLE actors_history_scd (
+    actor_history_id SERIAL PRIMARY KEY ,
+    actorid TEXT NOT NULL ,
+    actor TEXT NOT NULL, 
+    quality_class quality_class NOT NULL ,
+    is_active BOOLEAN NOT NULL ,
+    start_year INTEGER NOT NULL ,
+    end_year INTEGER ,
+    current_year INTEGER NOT NULL
+);
 
-CREATE TABLE actors_scd_type (
-	actor TEXT ,
-	quality_class quality_class ,
-	is_active BOOLEAN ,
-	start_season INTEGER , 
-	end_season INTEGER ,
-	current_season INTEGER
-)
-
+COMMENT ON TABLE actors_history_scd IS 'Type 2 SCD table tracking actor quality class and activity changes over time';
+COMMENT ON COLUMN actors_history_scd.end_year IS 'NULL indicates current active record';
 
 
 
@@ -115,44 +131,58 @@ CREATE TABLE actors_scd_type (
 --###PART 4###--
 --Backfill query for actors_history_scd: Write a "backfill" query that can populate the entire actors_history_scd table in a single query.
 
-
-
-
-WITH streak_started AS (
-    SELECT actor,
-           current_year,
-           quality_class,
-           LAG(quality_class, 1) OVER
-               (PARTITION BY actor ORDER BY current_year) <> quality_class
-               OR LAG(quality_class, 1) OVER
-               (PARTITION BY actor ORDER BY current_year) IS NULL
-               AS did_change
+WITH actor_years AS (
+    SELECT 
+        actorid,
+        actor,
+        current_year,
+        quality_class,
+        is_active,
+        LAG(quality_class , 1) OVER (PARTITION BY actorid ORDER BY current_year) AS prev_quality,
+        LAG(is_active , 1) OVER (PARTITION BY actorid ORDER BY current_year) AS prev_active
     FROM actors
+    ORDER BY actorid, current_year
 ),
-     streak_identified AS (
-         SELECT
-           actor,
-                quality_class,
-                current_year,
-            SUM(CASE WHEN did_change THEN 1 ELSE 0 END)
-                OVER (PARTITION BY actor ORDER BY current_year) as streak_identifier
-         FROM streak_started
-     ),
-     aggregated AS (
-         SELECT
-            actor,
-            quality_class,
-            streak_identifier,
-            MIN(current_year) AS start_date,
-            MAX(current_year) AS end_date
-         FROM streak_identified
-         GROUP BY 1,2,3
-     )
 
-     SELECT actor, quality_class, start_date, end_date
-     FROM aggregated
+change_points AS (
+    SELECT
+        actorid,
+        actor,
+        current_year,
+        quality_class,
+        is_active,
+        CASE 
+            WHEN quality_class <> prev_quality OR is_active <> prev_active 
+                 OR prev_quality IS NULL THEN 1 
+            ELSE 0 
+        END AS status_changed
+    FROM actor_years
+),
 
+streaks AS (
+    SELECT
+        actorid,
+        actor,
+        current_year,
+        quality_class,
+        is_active,
+        SUM(status_changed) OVER (PARTITION BY actorid ORDER BY current_year) AS streak_id
+    FROM change_points
+)
 
+INSERT INTO actors_history_scd
+    (actorid, actor, quality_class, is_active, start_year, end_year, current_year)
+SELECT
+    actorid,
+    actor,
+    quality_class,
+    is_active,
+    MIN(current_year) AS start_year,
+    MAX(current_year) AS end_year,
+    MAX(current_year) AS current_year
+FROM streaks
+GROUP BY actorid, actor, quality_class, is_active, streak_id
+ORDER BY actorid, start_year;
 
 
 
@@ -250,10 +280,6 @@ SELECT actor, quality_class, is_active, start_year, end_year FROM unnested_chang
 UNION ALL
 SELECT actor, quality_class, is_active, start_year, end_year FROM new_records
 ) total
-
-
-
-
 
 	
 

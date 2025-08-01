@@ -138,7 +138,7 @@ FROM bits
 --###PART 5 ###--
 CREATE TABLE hosts_cumulated (
 	host_name TEXT ,
-	host_activity_datelist TEXT[] ,
+	host_activity_datelist DATE[] ,
 	date DATE ,
 	PRIMARY KEY (host_name)
 )

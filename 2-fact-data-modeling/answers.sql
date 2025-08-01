@@ -206,3 +206,77 @@ CREATE TABLE host_activity_reduced (
 	unique_visitors NUMERIC[] ,
 	PRIMARY KEY (host , month)
 )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+--### PART 8 ###--
+INSERT INTO host_activity_reduced
+WITH events_aggregated AS (
+		SELECT
+		user_id ,
+		host ,
+		event_time ,
+		ROW_NUMBER() OVER (PARTITION BY user_id , event_time) AS row_num
+		FROM events
+		WHERE user_id IS NOT NULL 
+) ,
+
+	events_deduped AS (
+		SELECT * FROM events_aggregated WHERE row_num = 1 AND DATE(event_time)  =DATE('2023-01-02')
+	) ,
+	today AS (
+		SELECT 
+		user_id ,
+		host ,
+		COUNT(*) AS num_hits
+		FROM events_deduped
+		GROUP BY (user_id , host)
+	) ,
+	today_agg AS (
+	SELECT
+	host ,
+		ARRAY_AGG(user_id) AS user_list ,
+		ARRAY_AGG(num_hits) AS site_num_hits
+		FROM today
+		GROUP BY host
+	) ,
+	yesterday AS (
+		SELECT * FROM host_activity_reduced
+		WHERE month_start = DATE('2023-01-01')
+	)
+
+SELECT 
+	'0223-01-01' AS month_start ,
+	COALESCE(ta.host , y.host) ,
+	CASE
+		WHEN 
+			y.hit_array IS NOT NULL THEN y.hit_array || ta.site_num_hits
+		WHEN 
+			y.hit_array IS NULL THEN ta.site_num_hits
+		ELSE y.hit_array
+		END AS hit_array ,
+	CASE
+		WHEN 
+			y.unique_visitors IS NOT NULL THEN y.unique_visitors || ta.user_list
+		WHEN 
+			y.unique_visitors IS NULL THEN ta.user_list
+		ELSE y.unique_visitors
+		END AS unique_visitors 
+FROM today_agg ta FULL OUTER JOIN yesterday y
+ON ta.host = y.host
+ON CONFLICT (host ,month_start)
+DO
+	UPDATE
+		SET unique_visitors  = EXCLUDED.unique_visitors , hit_array = EXCLUDED.hit_array

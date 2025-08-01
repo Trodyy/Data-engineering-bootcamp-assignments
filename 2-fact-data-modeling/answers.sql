@@ -125,3 +125,19 @@ SELECT
 	BIT_COUNT(bits.datelist_int & CAST('1000000000' AS BIT(10))) > 0 AS last_day_active ,
 	BIT_COUNT(bits.datelist_int & CAST('1111111000' AS BIT(10))) > 0 AS last_week_active
 FROM bits
+
+
+
+
+
+
+
+
+
+
+--###PART 5 ###--
+CREATE TABLE hosts_cumulated (
+	host_name TEXT ,
+	host_activity_datelist TEXT[] ,
+	date DATE
+)

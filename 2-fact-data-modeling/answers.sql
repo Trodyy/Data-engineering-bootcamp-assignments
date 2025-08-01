@@ -200,7 +200,7 @@ DO
 
 --### PART 7 ###--
 CREATE TABLE host_activity_reduced (
-	month DATE ,
+	month_start DATE ,
 	host TEXT ,
 	hit_array BIGINT[] ,
 	unique_visitors NUMERIC[] ,

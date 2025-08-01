@@ -202,7 +202,6 @@ DO
 CREATE TABLE host_activity_reduced (
 	month DATE ,
 	host TEXT ,
-	date DATE ,
 	hit_array BIGINT[] ,
 	unique_visitors NUMERIC[] ,
 	PRIMARY KEY (host , month)

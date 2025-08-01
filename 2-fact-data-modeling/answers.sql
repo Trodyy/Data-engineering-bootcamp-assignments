@@ -142,3 +142,49 @@ CREATE TABLE hosts_cumulated (
 	date DATE ,
 	PRIMARY KEY (host_name)
 )
+
+
+
+
+
+
+
+
+
+--###PART 6 ###--
+WITH events_aggregated AS (
+		SELECT * ,
+		ROW_NUMBER() OVER (PARTITION BY user_id , event_time) AS row_num
+		FROM events
+		WHERE user_id IS NOT NULL 
+) ,
+	events_deduped AS (
+		SELECT * FROM events_aggregated WHERE row_num = 1
+	)  ,
+	today AS (
+		SELECT * FROM events_deduped WHERE DATE(event_time)  =DATE('2023-01-19')
+	) ,
+	yesterday AS (
+		SELECT * FROM hosts_cumulated WHERE date = DATE('2023-01-18')
+	) ,
+	hosts_agg AS(
+	SELECT host , DATE(event_time) AS date , COUNT(1) 
+	FROM today 
+	GROUP BY (host , DATE(event_time))
+)
+INSERT INTO hosts_cumulated
+SELECT 
+	COALESCE(hg.host , y.host_name) ,
+	CASE 
+		WHEN y.host_activity_datelist IS NOT NULL
+			THEN y.host_activity_datelist || ARRAY[DATE(hg.date)]
+		WHEN y.host_activity_datelist IS NULL
+			THEN ARRAY[DATE(hg.date)]
+			ELSE ARRAY[]::DATE[]
+		END AS host_activity_datelist ,
+	COALESCE(hg.date , y.date + INTERVAL '1 day') AS date
+FROM hosts_agg hg FULL OUTER JOIN yesterday y ON hg.host = y.host_name
+ON CONFLICT (host_name)
+DO
+	UPDATE
+		SET host_activity_datelist = EXCLUDED.host_activity_datelist , date = EXCLUDED.date

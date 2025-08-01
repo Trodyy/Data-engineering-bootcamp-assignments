@@ -188,3 +188,22 @@ ON CONFLICT (host_name)
 DO
 	UPDATE
 		SET host_activity_datelist = EXCLUDED.host_activity_datelist , date = EXCLUDED.date
+
+
+
+
+
+
+
+
+
+
+--### PART 7 ###--
+CREATE TABLE host_activity_reduced (
+	month DATE ,
+	host TEXT ,
+	date DATE ,
+	hit_array BIGINT[] ,
+	unique_visitors NUMERIC[] ,
+	PRIMARY KEY (host , month)
+)

@@ -83,3 +83,45 @@ FROM aggregated_data
 ON CONFLICT (user_id, browser_type) 
 DO UPDATE SET 
     device_activity_datelist = EXCLUDED.device_activity_datelist;
+
+
+
+
+
+
+
+
+
+
+
+
+--### PART 4 ###--
+WITH daily_agg AS (
+	SELECT
+	user_id ,
+	EXTRACT(
+    	DAY FROM DATE('2023-01-10') - d.valid_date) AS days_since,
+	udc.device_activity_datelist @> ARRAY[DATE(d.valid_date)] AS is_active
+	FROM user_devices_cumulated udc
+	CROSS JOIN
+	(SELECT * FROM generate_series('2023-01-01' , '2023-01-10' , INTERVAL '1 day') AS valid_date) AS d
+	-- WHERE date = DATE('2023-01-10')
+	) ,
+	bits AS (
+	SELECT 
+	user_id ,
+	SUM(CASE
+			WHEN is_active THEN POW(2 , 9 - days_since)
+			ELSE 0
+			END
+	)::BIGINT::BIT(10) AS datelist_int ,
+	ROW_NUMBER() OVER (PARTITION BY user_id)
+	FROM daily_agg
+	GROUP BY user_id
+	)
+SELECT
+	user_id ,
+	datelist_int ,
+	BIT_COUNT(bits.datelist_int & CAST('1000000000' AS BIT(10))) > 0 AS last_day_active ,
+	BIT_COUNT(bits.datelist_int & CAST('1111111000' AS BIT(10))) > 0 AS last_week_active
+FROM bits

@@ -29,7 +29,7 @@ CREATE TABLE user_devices_cumulated (
 --###PART 3 ###--
 WITH yesterday AS (
 	SELECT * FROM user_devices_cumulated
-	WHERE date = DATE('2022-12-31')
+	WHERE date = DATE('2023-01-10')
 ) ,
 	events_aggregated AS (
 		SELECT * ,
@@ -55,31 +55,34 @@ WITH yesterday AS (
 			DATE(event_time) AS event_time
 		FROM events_deduped ed
 		JOIN device_deduped dd ON ed.device_id = dd.device_id
-		WHERE DATE(event_time) = DATE('2023-01-01')
+		WHERE DATE(event_time) = DATE('2023-01-11')
 		AND user_id IS NOT NULL
 		GROUP BY (user_id , dd.browser_type , DATE(event_time))
-)
+) ,
 
-
-SELECT
+ aggregated_data AS (SELECT
 	COALESCE(t.user_id , y.user_id) AS user_id ,
 	COALESCE(DATE(t.event_time) , y.date + INTERVAL '1 day') AS date ,
-	t.browser_type AS browser_type ,
+	COALESCE(t.browser_type , y.browser_type) AS browser_type ,
 	-- ROW_NUMBER() OVER (PARTITION BY t.user_id , t.browser_type ,date)
 	CASE
-		WHEN
-			y.device_activity_datelist IS NOT NULL
-			THEN (y.device_activity_datelist || ARRAY[t.event_time])::DATE[]
-		WHEN t.user_id IS NULL
-			THEN y.device_activity_datelist
-		ELSE
-			ARRAY[t.event_time]::DATE[]
-		END AS device_activity_datelist
+    WHEN y.device_activity_datelist IS NOT NULL AND t.event_time IS NOT NULL
+        THEN y.device_activity_datelist || ARRAY[t.event_time]
+    WHEN y.device_activity_datelist IS NOT NULL
+        THEN y.device_activity_datelist -- Keep original without adding NULL
+    ELSE
+        ARRAY[t.event_time]
+END AS device_activity_datelist
 FROM 
 today t FULL OUTER JOIN yesterday y
-ON t.user_id = y.user_id
-ORDER BY user_id
--- SELECT * FROM events WHERE DATE(event_time) = DATE('2023-01-01') AND user_id = '16527802169428800000'
--- SELECT user_id,device_id FROM events
--- WHERE DATE(event_time) = DATE('2023-01-01')
--- GROUP BY (user_id , device_id)
+ON t.user_id = y.user_id)
+
+
+
+INSERT INTO user_devices_cumulated
+SELECT * 
+-- SELECT DISTINCT ON (user_id, browser_type, date) *
+FROM aggregated_data
+ON CONFLICT (user_id, browser_type) 
+DO UPDATE SET 
+    device_activity_datelist = EXCLUDED.device_activity_datelist;

@@ -234,23 +234,25 @@ WITH events_aggregated AS (
 ) ,
 
 	events_deduped AS (
-		SELECT * FROM events_aggregated WHERE row_num = 1 AND DATE(event_time)  =DATE('2023-01-02')
+		SELECT * FROM events_aggregated WHERE row_num = 1 AND DATE(event_time)  =DATE('2023-01-03')
 	) ,
 	today AS (
 		SELECT 
 		user_id ,
 		host ,
+		DATE(event_time) AS date ,
 		COUNT(*) AS num_hits
 		FROM events_deduped
-		GROUP BY (user_id , host)
+		GROUP BY (user_id , host , DATE(event_time))
 	) ,
 	today_agg AS (
 	SELECT
 	host ,
 		ARRAY_AGG(user_id) AS user_list ,
-		ARRAY_AGG(num_hits) AS site_num_hits
+		ARRAY_AGG(num_hits) AS site_num_hits ,
+		date
 		FROM today
-		GROUP BY host
+		GROUP BY (host , date)
 	) ,
 	yesterday AS (
 		SELECT * FROM host_activity_reduced
@@ -258,7 +260,7 @@ WITH events_aggregated AS (
 	)
 
 SELECT 
-	'2023-01-01' AS month_start ,
+	COALESCE(y.month_start , DATE_TRUNC('month' , ta.date)) AS month_start ,
 	COALESCE(ta.host , y.host) ,
 	CASE
 		WHEN 
@@ -280,3 +282,4 @@ ON CONFLICT (host ,month_start)
 DO
 	UPDATE
 		SET unique_visitors  = EXCLUDED.unique_visitors , hit_array = EXCLUDED.hit_array
+

@@ -258,7 +258,7 @@ WITH events_aggregated AS (
 	)
 
 SELECT 
-	'0223-01-01' AS month_start ,
+	'2023-01-01' AS month_start ,
 	COALESCE(ta.host , y.host) ,
 	CASE
 		WHEN 

@@ -2,6 +2,7 @@
 
 
 --First of all I've to create players table again.
+--To create players seasons we need to have 2 types by names season_stats and scoring class
  CREATE TYPE season_stats AS (
                          season Integer,
                          pts REAL,
@@ -12,7 +13,7 @@
  CREATE TYPE scoring_class AS
      ENUM ('bad', 'average', 'good', 'star');
 
-
+--Creating players table.
  CREATE TABLE players (
      player_name TEXT,
      height TEXT,
@@ -27,7 +28,7 @@
      current_season INTEGER,
      PRIMARY KEY (player_name, current_season)
  );
-
+--Inserting data into players table till season = 2015
  WITH last_season AS (
     SELECT * FROM players
     WHERE current_season = 2014
@@ -75,4 +76,56 @@ SELECT
 
 
 
+--Now , Like as done before in the lab I created a table to trach players activity.
+CREATE TABLE players_growth (
+	player_name TEXT ,
+	first_active_season INTEGER ,
+	last_active_season INTEGER ,
+	activity_state TEXT ,
+	seasons_active INTEGER[] ,
+	season INTEGER ,
+	PRIMARY KEY (player_name , season)
+)
 
+
+
+-- Inserting data
+INSERT INTO players_growth
+WITH yesterday AS (      --I defined CTE yesterday from players_growth tables
+	SELECT * FROM players_growth
+	WHERE season = 2005
+) ,
+	agg_players AS (       --Before defining today, I aggergate players to prevent from repeated rows.
+		SELECT
+ 			player_name ,
+			seasons ,
+			MIN(current_season) AS current_season   --We assume the minimum of the current_season
+		FROM players
+		GROUP BY (player_name , seasons)
+		ORDER BY player_name , seasons
+	) ,
+	today AS (
+		SELECT * FROM agg_players       --Now , Lets define today CTE
+		WHERE current_season =2006      
+	)
+
+SELECT
+	COALESCE(t.player_name , y.player_name) AS player_name ,
+	COALESCE(y.first_active_season , t.current_season) AS first_active_season ,
+	COALESCE(t.current_season , y.last_active_season) AS last_active_season ,
+	CASE
+		WHEN y.player_name IS NULL THEN 'New'    --If There is no activity before , He assume as NEW
+		WHEN y.last_active_season = t.current_season - 1 THEN 'Continued Playing'    -- If  the distance between this year and the last activity year is 1 then it means he is continueing.
+		WHEN y.last_active_season < t.current_season - 1 THEN 'Returned from Retirement'   --If the distance was smaller it means he came back from a resurrected time
+		WHEN t.player_name IS NULL AND y.last_active_season = y.season THEN 'Retired' -- It's plain		
+		ELSE 'Stayed Retired'
+	END AS activity_state ,
+	COALESCE(y.seasons_active ,
+		ARRAY[]::INTEGER[]) || CASE
+		WHEN t.player_name IS NOT NULL THEN ARRAY[t.current_season]
+			ELSE ARRAY[]::INTEGER[]
+		END AS season_active ,
+	 COALESCE(t.current_season, y.season + 1 ) as season -- Add dates active
+FROM today t
+FULL OUTER JOIN yesterday y   --Use FULL OUTER JOIN
+ON t.player_name = y.player_name

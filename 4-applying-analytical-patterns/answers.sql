@@ -129,3 +129,29 @@ SELECT
 FROM today t
 FULL OUTER JOIN yesterday y   --Use FULL OUTER JOIN
 ON t.player_name = y.player_name
+
+
+
+
+
+--### PART 2 ###--
+WITH shirin AS (
+	SELECT 
+	COALESCE(gd.player_id , 0) AS player_id ,
+	COALESCE(gd.team_id , 0) AS team_id ,
+	COALESCE(g.season , 0) AS season ,
+	COALESCE(SUM(pts) , 0) AS sum_points
+FROM game_details gd
+JOIN games g
+ON gd.game_id = g.game_id
+GROUP BY GROUPING SETS(
+	(player_id , team_id) ,
+	(player_id , season) ,
+	(team_id) ,
+	(season)
+)
+)
+
+SELECT * FROM shirin
+WHERE team_id = 0
+ORDER BY sum_points DESC

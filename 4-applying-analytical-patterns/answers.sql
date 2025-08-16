@@ -135,7 +135,7 @@ ON t.player_name = y.player_name
 
 
 --### PART 2 ###--
-WITH shirin AS (
+WITH aggergated_tables AS (
 	SELECT 
 	COALESCE(gd.player_id , 0) AS player_id ,
 	COALESCE(gd.team_id , 0) AS team_id ,
@@ -152,6 +152,6 @@ GROUP BY GROUPING SETS(
 )
 )
 
-SELECT * FROM shirin
+SELECT * FROM aggergated_tables
 WHERE team_id = 0
 ORDER BY sum_points DESC

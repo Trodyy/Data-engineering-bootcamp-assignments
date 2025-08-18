@@ -135,23 +135,23 @@ ON t.player_name = y.player_name
 
 
 --### PART 2 ###--
-WITH aggergated_tables AS (
+WITH aggregated_tables AS (
 	SELECT 
 	COALESCE(gd.player_id , 0) AS player_id ,
 	COALESCE(gd.team_id , 0) AS team_id ,
 	COALESCE(g.season , 0) AS season ,
-	COALESCE(SUM(pts) , 0) AS sum_points
+	COALESCE(SUM(pts) , 0) AS sum_points ,
+	COALESCE(COUNT(CASE WHEN home_team_wins = 1 THEN 1 END) , 0) AS home_team_wins
 FROM game_details gd
 JOIN games g
 ON gd.game_id = g.game_id
 GROUP BY GROUPING SETS(
 	(player_id , team_id) ,
 	(player_id , season) ,
-	(team_id) ,
-	(season)
+	(team_id , home_team_wins)
 )
 )
 
-SELECT * FROM aggergated_tables
-WHERE team_id = 0
+SELECT * FROM aggregated_tables
+WHERE season = 0
 ORDER BY sum_points DESC
